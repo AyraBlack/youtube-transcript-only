@@ -156,15 +156,15 @@ def get_youtube_transcript_text(video_url):
         with yt_dlp.YoutubeDL(probe_opts) as ydl_probe:
             info = ydl_probe.extract_info(video_url, download=False)
         available = set(info.get('subtitles', {})) | set(info.get('automatic_captions', {}))
-        # decide language
-        if 'ro' in available and 'en' not in available:
-            lang = 'ro'
-        elif 'en' in available and 'ro' not in available:
+        # decide language: prefer English if present
+        if 'en' in available and 'ro' not in available:
             lang = 'en'
-        elif 'ro' in available and 'en' in available:
+        elif 'ro' in available and 'en' not in available:
             lang = 'ro'
+        elif 'en' in available and 'ro' in available:
+            lang = 'en'  # both exist -> choose English
         else:
-            lang = 'en'
+            lang = 'en'  # fallback
         app.logger.info(f"Detected caption languages: {available} → choosing '{lang}'")
     except Exception as e:
         app.logger.error(f"Error detecting caption languages: {e}", exc_info=True)
@@ -189,7 +189,6 @@ def get_youtube_transcript_text(video_url):
         with yt_dlp.YoutubeDL(dl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
         subs = info.get('requested_subtitles') or {}
-        # try the filepath from yt-dlp
         if lang in subs and subs[lang].get('filepath') and os.path.exists(subs[lang]['filepath']):
             vtt_path = subs[lang]['filepath']
         else:
