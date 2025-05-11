@@ -124,9 +124,15 @@ def extract_audio_from_video(video_url, audio_format="mp3"):
             'noprogress': False,
         }
         with yt_dlp.YoutubeDL(dl_opts) as ydl:
-            code = ydl.download([video_url])
-            if code != 0:
-                return {"error": f"yt-dlp failed with code {code}", "audio_server_path": None, "audio_relative_path": None}
+            try:
+                ydl.download([video_url])
+            except Exception as dl_err:
+                app.logger.error(f"yt-dlp download error: {dl_err}", exc_info=True)
+                return {
+                    "error": f"yt-dlp download error: {dl_err}",
+                    "audio_server_path": None,
+                    "audio_relative_path": None,
+                }
 
         final = os.path.join(out_dir, f"{base_name}.{audio_format}")
         if not os.path.exists(final):
@@ -216,52 +222,4 @@ def get_youtube_transcript_text(video_url):
                 os.remove(vtt_path)
                 app.logger.info(f"Deleted temporary file: {vtt_path}")
             except Exception as ex:
-                app.logger.error(f"Could not delete temp file {vtt_path}: {ex}")
-
-    return result
-
-# --- API Endpoints ---
-@app.route('/api/extract_audio', methods=['GET'])
-def api_extract_audio():
-    app.logger.info("Received request for /api/extract_audio")
-    url = request.args.get('url')
-    if not url:
-        return jsonify({"error": "Missing 'url' parameter"}), 400
-    res = extract_audio_from_video(url)
-    data = {"audio_download_url": None, "audio_server_path": res.get("audio_server_path"), "error": res.get("error")}
-    if res.get("audio_relative_path"):
-        data['audio_download_url'] = url_for('serve_downloaded_file', relative_file_path=res['audio_relative_path'], _external=True)
-    return (jsonify(data), 500) if data['error'] else (jsonify(data), 200)
-
-@app.route('/api/get_youtube_transcript', methods=['GET'])
-def api_get_youtube_transcript():
-    app.logger.info("Received request for /api/get_youtube_transcript")
-    url = request.args.get('url')
-    if not url:
-        return jsonify({"error": "Missing 'url' parameter"}), 400
-    res = get_youtube_transcript_text(url)
-    if res.get('error'):
-        return jsonify({"error": res['error'], "language_detected": res.get('language_detected'), "transcript_text": None}), 500
-    return Response(res['transcript_text'], mimetype='text/plain; charset=utf-8')
-
-@app.route('/files/<path:relative_file_path>')
-def serve_downloaded_file(relative_file_path):
-    app.logger.info(f"Serving file: {relative_file_path}")
-    try:
-        return send_from_directory(DOWNLOADS_BASE_DIR, relative_file_path, as_attachment=True)
-    except FileNotFoundError:
-        return jsonify({"error": "File not found."}), 404
-    except Exception as e:
-        app.logger.error(f"Error serving file: {e}", exc_info=True)
-        return jsonify({"error": "Internal server error."}), 500
-
-@app.route('/health', methods=['GET'])
-def health_check():
-    return jsonify({"status": "healthy"}), 200
-
-# --- Main Execution (dev only) ---
-if __name__ == '__main__':
-    app.logger.info("--- Starting Flask app locally ---")
-    if not is_ffmpeg_available():
-        app.logger.critical("FFmpeg not found. This API requires FFmpeg.")
-    app.run(host='0.0.0.0', port=5001, debug=True)
+                app.logger.error(f"Could not delete temp file {
